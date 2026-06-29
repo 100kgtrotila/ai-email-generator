@@ -15,11 +15,9 @@ export default function LoginPage() {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const email = (form.elements.namedItem("email") as HTMLInputElement).value;
-    const password = (form.elements.namedItem("password") as HTMLInputElement).value;
+  function formAction(formData: FormData) {
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
 
     startTransition(async () => {
       setError(null);
@@ -43,7 +41,7 @@ export default function LoginPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} id="login-form" className="space-y-4">
+      <form action={formAction} id="login-form" className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="login-email">Email</Label>
           <Input

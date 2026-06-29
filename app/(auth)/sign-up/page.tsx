@@ -18,12 +18,10 @@ export default function SignUpPage() {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const name = (form.elements.namedItem("name") as HTMLInputElement).value;
-    const email = (form.elements.namedItem("email") as HTMLInputElement).value;
-    const password = (form.elements.namedItem("password") as HTMLInputElement).value;
+  function formAction(formData: FormData) {
+    const name = formData.get("name") as string;
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
 
     startTransition(async () => {
       setError(null);
@@ -54,7 +52,7 @@ export default function SignUpPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} id="signup-form" className="space-y-4">
+      <form action={formAction} id="signup-form" className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="signup-name">Full Name</Label>
           <Input

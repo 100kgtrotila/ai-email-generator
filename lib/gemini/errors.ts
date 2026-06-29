@@ -42,6 +42,7 @@ const RETRYABLE_STATUSES = new Set([429, 503]);
  */
 export function classifyGeminiError(err: unknown): GeminiErrorResult {
   if (err instanceof GoogleGenerativeAIFetchError) {
+    console.error('[Gemini Raw Error]:', err.message, err.status, err.statusText);
     const status = err.status;
     const userMessage =
       (typeof status === 'number' ? STATUS_MESSAGES[status] : undefined) ??

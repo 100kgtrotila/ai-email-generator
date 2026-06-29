@@ -29,10 +29,9 @@ function getAdminApp(): App {
 
   const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(
-    /\\n/g,
-    '\n',
-  );
+  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY
+    ?.replace(/^["']|["']$/g, '') // Remove accidental surrounding quotes
+    .replace(/\\n/g, '\n');       // Convert literal \n strings to actual newlines
 
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error(

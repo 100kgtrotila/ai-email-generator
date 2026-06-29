@@ -36,6 +36,8 @@ import {
   toGeneratedEmail,
   type EmailDocument,
 } from '@/lib/firebase/email-repository';
+import { emailRequestSchema, generatedEmailSchema } from '@/lib/validations/email';
+import { z } from 'zod';
 import type { ActionResult, EmailRequest, GeneratedEmail } from '@/types';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -81,8 +83,14 @@ export async function generateEmailAction(
   // uid is verified — log it server-side for audit trail
   console.info(`[generateEmailAction] uid=${uid}`);
 
+  const parseResult = emailRequestSchema.safeParse(request);
+  if (!parseResult.success) {
+    return { success: false, error: 'Invalid email request data.' };
+  }
+  const validRequest = parseResult.data;
+
   try {
-    const result = await generateEmail(request);
+    const result = await generateEmail(validRequest);
     const email: GeneratedEmail = {
       id: randomUUID(),
       subject: result.subject,
@@ -125,13 +133,19 @@ export async function saveEmailAction(
     return { success: false, error: 'Unauthorized.' };
   }
 
+  const parseResult = generatedEmailSchema.safeParse(email);
+  if (!parseResult.success) {
+    return { success: false, error: 'Invalid email data.' };
+  }
+  const validEmail = parseResult.data;
+
   try {
     const doc: EmailDocument = {
-      id: email.id,
-      subject: email.subject,
-      body: email.body,
-      request: email.request,
-      createdAt: email.createdAt,
+      id: validEmail.id,
+      subject: validEmail.subject,
+      body: validEmail.body,
+      request: validEmail.request,
+      createdAt: validEmail.createdAt.toISOString(),
       uid,
     };
     await saveEmail(uid, doc);
@@ -193,8 +207,14 @@ export async function deleteEmailAction(
     return { success: false, error: 'Unauthorized.' };
   }
 
+  const parseResult = z.string().min(1).safeParse(emailId);
+  if (!parseResult.success) {
+    return { success: false, error: 'Invalid email ID.' };
+  }
+  const validEmailId = parseResult.data;
+
   try {
-    await deleteEmail(uid, emailId);
+    await deleteEmail(uid, validEmailId);
     revalidatePath('/history');
     return { success: true, data: undefined };
   } catch (err) {

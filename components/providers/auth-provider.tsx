@@ -1,15 +1,5 @@
 'use client';
 
-/**
- * AuthProvider — React context provider for Firebase Authentication state.
- *
- * Wraps the app in an AuthContext that exposes the current user and loading
- * state. Uses onAuthStateChanged to keep the context synchronized with
- * Firebase Auth in real time.
- *
- * Usage: import useAuth from this file in any Client Component.
- */
-
 import {
   createContext,
   useContext,
@@ -17,7 +7,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
+import { onIdTokenChanged, type User } from 'firebase/auth';
+import Cookies from 'js-cookie';
 import { getFirebaseAuth } from '@/lib/firebase/client';
 import type { AuthUser } from '@/types';
 
@@ -45,8 +36,19 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (firebaseUser) => {
-      setUser(firebaseUser ? toAuthUser(firebaseUser) : null);
+    const unsubscribe = onIdTokenChanged(getFirebaseAuth(), async (firebaseUser) => {
+      if (firebaseUser) {
+        setUser(toAuthUser(firebaseUser));
+        const token = await firebaseUser.getIdToken();
+        Cookies.set('firebase-token', token, {
+          expires: 1, // 1 day
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+        });
+      } else {
+        setUser(null);
+        Cookies.remove('firebase-token');
+      }
       setLoading(false);
     });
 
