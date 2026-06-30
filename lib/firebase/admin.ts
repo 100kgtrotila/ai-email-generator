@@ -45,6 +45,14 @@ function getAdminApp(): App {
   });
 }
 
-export const adminApp: App = getAdminApp();
-export const adminDb: Firestore = getFirestore(adminApp);
-export const adminAuth: Auth = getAuth(adminApp);
+export const adminApp = new Proxy({} as App, {
+  get: (target, prop) => (getAdminApp() as any)[prop],
+});
+
+export const adminDb = new Proxy({} as Firestore, {
+  get: (target, prop) => (getFirestore(getAdminApp()) as any)[prop],
+});
+
+export const adminAuth = new Proxy({} as Auth, {
+  get: (target, prop) => (getAuth(getAdminApp()) as any)[prop],
+});
