@@ -38,7 +38,7 @@ describe('Server Action Logic', () => {
       vi.mocked(adminAuth.verifyIdToken).mockResolvedValue({
         uid: 'test-user-id',
         email: 'test@example.com',
-      } as any);
+      } as unknown as import('firebase-admin/auth').DecodedIdToken);
 
       const result = await generateEmailAction('valid-token', {
         senderName: 'Test Sender',
@@ -72,14 +72,15 @@ describe('Server Action Logic', () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error).toBe('Unauthorized.');
+        expect(result.error.message).toBe('Unauthorized.');
+        expect(result.error.category).toBe('AUTH_TOKEN_INVALID');
       }
     });
 
     it('returns failure if input validation fails (e.g., purpose too short)', async () => {
       vi.mocked(adminAuth.verifyIdToken).mockResolvedValue({
         uid: 'test-user-id',
-      } as any);
+      } as unknown as import('firebase-admin/auth').DecodedIdToken);
 
       const result = await generateEmailAction('valid-token', {
         senderName: 'Test Sender',
@@ -93,7 +94,8 @@ describe('Server Action Logic', () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error).toContain('purpose: Purpose must be at least 5 characters');
+        expect(result.error.message).toContain('purpose: Purpose must be at least 5 characters');
+        expect(result.error.category).toBe('VALIDATION_ERROR');
       }
     });
   });

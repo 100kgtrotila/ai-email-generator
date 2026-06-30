@@ -36,23 +36,32 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onIdTokenChanged(getFirebaseAuth(), async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(toAuthUser(firebaseUser));
-        const token = await firebaseUser.getIdToken();
-        Cookies.set('firebase-token', token, {
-          expires: 1 / 24, // 1 hour
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-        });
-      } else {
-        setUser(null);
-        Cookies.remove('firebase-token');
-      }
-      setLoading(false);
-    });
+    let unsubscribe: () => void = () => {};
 
-    return unsubscribe;
+    try {
+      const auth = getFirebaseAuth();
+      unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
+        if (firebaseUser) {
+          setUser(toAuthUser(firebaseUser));
+          const token = await firebaseUser.getIdToken();
+          Cookies.set('firebase-token', token, {
+            expires: 1 / 24, // 1 hour
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+          });
+        } else {
+          setUser(null);
+          Cookies.remove('firebase-token');
+        }
+        setLoading(false);
+      });
+    } catch (error) {
+      console.error('Failed to initialize Firebase Auth:', error);
+      // We don't crash, we just let the app load in unauthenticated state
+      setTimeout(() => setLoading(false), 0);
+    }
+
+    return () => unsubscribe();
   }, []);
 
   return (

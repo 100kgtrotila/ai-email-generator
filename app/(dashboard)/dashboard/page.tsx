@@ -4,11 +4,11 @@ import { useState, useTransition, useRef } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/components/providers";
-import { getFirebaseAuth } from "@/lib/firebase/client";
+import { useIdToken, NotAuthenticatedError } from "@/hooks/use-id-token";
 import { generateEmailAction, saveEmailAction } from "@/actions";
-import { AlertTriangle } from "lucide-react";
 import { emailGenerationSchema, type EmailGenerationInput } from "@/lib/validations/email";
 import type { GeneratedEmail } from "@/types";
+import { toast } from "sonner";
 
 // Import Extracted Components
 import { ToneSelector } from "@/components/dashboard/tone-selector";
@@ -18,6 +18,7 @@ import { EmailActionToolbar } from "@/components/dashboard/email-action-toolbar"
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const getIdToken = useIdToken();
 
   // ── react-hook-form ────────────────────────────────────────────────────────
   const methods = useForm<EmailGenerationInput>({
@@ -35,7 +36,6 @@ export default function DashboardPage() {
 
   // ── Output state ──────────────────────────────────────────────────────────
   const [generatedEmail, setGeneratedEmail] = useState<GeneratedEmail | null>(null);
-  const [serverError, setServerError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -44,16 +44,20 @@ export default function DashboardPage() {
 
   // ── Submit handler ────────────────────────────────────────────────────────
   async function onValidSubmit(data: EmailGenerationInput) {
-    setServerError(null);
     setSaveSuccess(false);
     setGeneratedEmail(null);
 
-    const currentUser = getFirebaseAuth().currentUser;
-    if (!currentUser) {
-      setServerError("You must be signed in to generate emails.");
+    let idToken: string;
+    try {
+      idToken = await getIdToken();
+    } catch (err) {
+      if (err instanceof NotAuthenticatedError) {
+        toast.error("Помилка авторизації", { description: "Ви повинні увійти, щоб генерувати листи." });
+      } else {
+        toast.error("Помилка мережі", { description: "Не вдалося перевірити сесію. Спробуйте ще раз." });
+      }
       return;
     }
-    const idToken = await currentUser.getIdToken();
 
     try {
       const result = await generateEmailAction(idToken, {
@@ -69,11 +73,11 @@ export default function DashboardPage() {
       if (result.success) {
         setGeneratedEmail(result.data);
       } else {
-        setServerError(result.error);
+        toast.error("Помилка генерації", { description: result.error.message });
       }
     } catch (error) {
       console.error("Action failed:", error);
-      setServerError("A server error occurred. Please check your Vercel logs or environment variables.");
+      toast.error("Системна помилка", { description: "Сталася непередбачена помилка. Спробуйте пізніше." });
     }
   }
 
@@ -82,7 +86,6 @@ export default function DashboardPage() {
     if (isSubmitting || isSaving) return;
     reset();
     setGeneratedEmail(null);
-    setServerError(null);
     setSaveSuccess(false);
   }
 
@@ -111,22 +114,28 @@ export default function DashboardPage() {
   function handleSave() {
     if (!generatedEmail) return;
     startSaveTransition(async () => {
-      const currentUser = getFirebaseAuth().currentUser;
-      if (!currentUser) {
-        setServerError("You must be signed in to save emails.");
+      let idToken: string;
+      try {
+        idToken = await getIdToken();
+      } catch (err) {
+        if (err instanceof NotAuthenticatedError) {
+          toast.error("Помилка авторизації", { description: "Ви повинні увійти, щоб зберігати листи." });
+        } else {
+          toast.error("Помилка мережі", { description: "Не вдалося перевірити сесію. Спробуйте ще раз." });
+        }
         return;
       }
-      const idToken = await currentUser.getIdToken();
       try {
         const result = await saveEmailAction(idToken, generatedEmail);
         if (result.success) {
           setSaveSuccess(true);
+          toast.success("Збережено", { description: "Лист успішно збережено в історію." });
         } else {
-          setServerError(result.error);
+          toast.error("Помилка збереження", { description: result.error.message });
         }
       } catch (error) {
         console.error("Save failed:", error);
-        setServerError("A server error occurred while saving.");
+        toast.error("Системна помилка", { description: "Не вдалося зберегти лист." });
       }
     });
   }
@@ -147,21 +156,6 @@ export default function DashboardPage() {
             Generate professional emails in seconds — powered by Gemini AI.
           </p>
         </div>
-
-        {/* Server Error Banner */}
-        {serverError !== null && (
-          <div
-            role="alert"
-            id="dashboard-error-banner"
-            className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
-          >
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <div>
-              <p className="font-semibold">Something went wrong</p>
-              <p className="mt-0.5 font-normal opacity-80">{serverError}</p>
-            </div>
-          </div>
-        )}
 
         {/* Main Card */}
         <div className="overflow-hidden rounded-2xl bg-white shadow-xl shadow-indigo-500/10 ring-1 ring-slate-200/60">

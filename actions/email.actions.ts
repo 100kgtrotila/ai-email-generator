@@ -2,27 +2,6 @@
 
 /**
  * Email Server Actions — secured with Firebase ID token verification.
- *
- * Security model:
- *   Every exported action accepts an `idToken: string` from the client.
- *   The token is verified server-side via adminAuth.verifyIdToken() to produce
- *   the authoritative `uid`. The client-supplied UID is never trusted.
- *
- *   Client Component:
- *     const token = await getFirebaseAuth().currentUser?.getIdToken()
- *     await generateEmailAction(token, request)
- *
- * Error model:
- *   All actions return ActionResult<T> — never throw to the client.
- *   GeminiServiceError.userMessage is safe to surface; raw SDK errors are not.
- *   Auth failures always return { success: false, error: 'Unauthorized.' }
- *   with no further detail (avoids information leakage).
- *
- * Orchestration:
- *   Client → Action (auth + orchestration) → Service/Repository → SDK
- *
- * @delegate Gemini Agent   — generateEmail() in lib/gemini/service.ts
- * @delegate Firebase Agent — repository methods in lib/firebase/email-repository.ts
  */
 
 import { randomUUID } from 'crypto';
@@ -30,6 +9,7 @@ import { revalidatePath } from 'next/cache';
 import { adminAuth } from '@/lib/firebase/admin';
 import { GeminiServiceError } from '@/lib/gemini/service';
 import { getAIService } from '@/lib/ai/factory';
+import { logError, logInfo } from '@/lib/logger';
 import {
   saveEmail,
   getEmails,
@@ -39,7 +19,7 @@ import {
 } from '@/lib/firebase/email-repository';
 import { generatedEmailSchema, emailRequestSchema } from '@/lib/validations/email';
 import { z } from 'zod';
-import type { ActionResult, EmailRequest, GeneratedEmail } from '@/types';
+import type { ActionResult, EmailRequest, GeneratedEmail, ErrorCategory } from '@/types';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Auth guard — shared by all actions
@@ -47,8 +27,7 @@ import type { ActionResult, EmailRequest, GeneratedEmail } from '@/types';
 
 /**
  * Verifies a Firebase ID token and returns the authoritative UID.
- * Throws a generic 'Unauthorized.' error (no detail) if the token is invalid,
- * expired, or revoked — prevents token structure information leakage.
+ * Throws if the token is invalid, expired, or revoked.
  */
 async function verifyIdToken(idToken: string): Promise<string> {
   const decoded = await adminAuth.verifyIdToken(idToken, /* checkRevoked */ true);
@@ -59,16 +38,6 @@ async function verifyIdToken(idToken: string): Promise<string> {
 // Generate
 // ──────────────────────────────────────────────────────────────────────────────
 
-/**
- * Verifies the caller, then calls Gemini to generate an email.
- * Returns the generated content as a UI-layer GeneratedEmail.
- * Does NOT auto-save — the user decides whether to persist it.
- *
- * Error classification:
- *   GeminiServiceError  → user-safe message + retryable flag forwarded
- *   Auth error          → generic 'Unauthorized.' (no SDK detail)
- *   Other               → generic server error message
- */
 export async function generateEmailAction(
   idToken: string,
   request: EmailRequest,
@@ -77,27 +46,23 @@ export async function generateEmailAction(
 
   try {
     uid = await verifyIdToken(idToken);
-  } catch {
-    return { success: false, error: 'Unauthorized.' };
+  } catch (err) {
+    logError('Auth verification failed', err, { action: 'generateEmailAction', category: 'AUTH_TOKEN_INVALID' });
+    return { success: false, error: { category: 'AUTH_TOKEN_INVALID', message: 'Unauthorized.', retryable: false } };
   }
 
-  // uid is verified — log it server-side for audit trail
-  console.info(`[generateEmailAction] uid=${uid}`);
+  logInfo(`uid=${uid}`, { action: 'generateEmailAction', uid });
 
-  // Validate the full request schema to ensure no prompt injection or data bloat occurs
-  // in unvalidated fields like senderName.
   const parseResult = emailRequestSchema.safeParse(request);
   if (!parseResult.success) {
     const fieldErrors = parseResult.error.flatten().fieldErrors;
-    // Build a human-readable message listing every failing field.
     const messages = Object.entries(fieldErrors)
-      .flatMap(([field, errs]) =>
-        (errs ?? []).map((msg) => `${field}: ${msg}`),
-      )
+      .flatMap(([field, errs]) => (errs ?? []).map((msg) => `${field}: ${msg}`))
       .join(' | ');
+    logError('Validation failed', new Error(messages), { action: 'generateEmailAction', uid, category: 'VALIDATION_ERROR' });
     return {
       success: false,
-      error: messages || 'Invalid email request data.',
+      error: { category: 'VALIDATION_ERROR', message: messages || 'Invalid email request data.', retryable: false },
     };
   }
 
@@ -113,14 +78,20 @@ export async function generateEmailAction(
     return { success: true, data: email };
   } catch (err) {
     if (err instanceof GeminiServiceError) {
+      // Use the status or existing reclassification to map to category
+      let category: ErrorCategory = 'UNKNOWN';
+      if (err.status === 429) category = 'GEMINI_RATE_LIMIT';
+      else if (err.userMessage.includes('format') || err.userMessage.includes('parse')) category = 'GEMINI_INVALID_RESPONSE';
+      
+      logError('Gemini Service Error', err, { action: 'generateEmailAction', uid, category });
       return {
         success: false,
-        error: err.userMessage,
+        error: { category, message: err.userMessage, retryable: err.retryable },
       };
     }
-    const message =
-      err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.';
-    return { success: false, error: message };
+    const message = err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.';
+    logError('Unexpected error during generation', err, { action: 'generateEmailAction', uid, category: 'UNKNOWN' });
+    return { success: false, error: { category: 'UNKNOWN', message, retryable: true } };
   }
 }
 
@@ -128,11 +99,6 @@ export async function generateEmailAction(
 // Save
 // ──────────────────────────────────────────────────────────────────────────────
 
-/**
- * Verifies the caller, then persists a generated email to Firestore.
- * The Firestore document includes the denormalized `uid` for collection-group
- * query readiness.
- */
 export async function saveEmailAction(
   idToken: string,
   email: GeneratedEmail,
@@ -141,13 +107,15 @@ export async function saveEmailAction(
 
   try {
     uid = await verifyIdToken(idToken);
-  } catch {
-    return { success: false, error: 'Unauthorized.' };
+  } catch (err) {
+    logError('Auth verification failed', err, { action: 'saveEmailAction', category: 'AUTH_TOKEN_INVALID' });
+    return { success: false, error: { category: 'AUTH_TOKEN_INVALID', message: 'Unauthorized.', retryable: false } };
   }
 
   const parseResult = generatedEmailSchema.safeParse(email);
   if (!parseResult.success) {
-    return { success: false, error: 'Invalid email data.' };
+    logError('Validation failed', parseResult.error, { action: 'saveEmailAction', uid, category: 'VALIDATION_ERROR' });
+    return { success: false, error: { category: 'VALIDATION_ERROR', message: 'Invalid email data.', retryable: false } };
   }
   const validEmail = parseResult.data;
 
@@ -164,9 +132,9 @@ export async function saveEmailAction(
     revalidatePath('/history');
     return { success: true, data: undefined };
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Unknown error while saving.';
-    return { success: false, error: message };
+    const message = err instanceof Error ? err.message : 'Unknown error while saving.';
+    logError('Error saving email', err, { action: 'saveEmailAction', uid, category: 'FIRESTORE_READ_WRITE' });
+    return { success: false, error: { category: 'FIRESTORE_READ_WRITE', message, retryable: true } };
   }
 }
 
@@ -174,10 +142,6 @@ export async function saveEmailAction(
 // History
 // ──────────────────────────────────────────────────────────────────────────────
 
-/**
- * Verifies the caller, then fetches their full email generation history.
- * Maps EmailDocument[] (Firestore layer) → GeneratedEmail[] (UI layer).
- */
 export async function getEmailHistoryAction(
   idToken: string,
 ): Promise<ActionResult<GeneratedEmail[]>> {
@@ -185,17 +149,18 @@ export async function getEmailHistoryAction(
 
   try {
     uid = await verifyIdToken(idToken);
-  } catch {
-    return { success: false, error: 'Unauthorized.' };
+  } catch (err) {
+    logError('Auth verification failed', err, { action: 'getEmailHistoryAction', category: 'AUTH_TOKEN_INVALID' });
+    return { success: false, error: { category: 'AUTH_TOKEN_INVALID', message: 'Unauthorized.', retryable: false } };
   }
 
   try {
     const docs = await getEmails(uid);
     return { success: true, data: docs.map(toGeneratedEmail) };
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Unknown error fetching history.';
-    return { success: false, error: message };
+    const message = err instanceof Error ? err.message : 'Unknown error fetching history.';
+    logError('Error fetching history', err, { action: 'getEmailHistoryAction', uid, category: 'FIRESTORE_READ_WRITE' });
+    return { success: false, error: { category: 'FIRESTORE_READ_WRITE', message, retryable: true } };
   }
 }
 
@@ -203,10 +168,6 @@ export async function getEmailHistoryAction(
 // Delete
 // ──────────────────────────────────────────────────────────────────────────────
 
-/**
- * Verifies the caller, then hard-deletes a single email from Firestore.
- * The `uid` from the verified token ensures users can only delete their own emails.
- */
 export async function deleteEmailAction(
   idToken: string,
   emailId: string,
@@ -215,13 +176,15 @@ export async function deleteEmailAction(
 
   try {
     uid = await verifyIdToken(idToken);
-  } catch {
-    return { success: false, error: 'Unauthorized.' };
+  } catch (err) {
+    logError('Auth verification failed', err, { action: 'deleteEmailAction', category: 'AUTH_TOKEN_INVALID' });
+    return { success: false, error: { category: 'AUTH_TOKEN_INVALID', message: 'Unauthorized.', retryable: false } };
   }
 
   const parseResult = z.string().uuid('Invalid email ID format.').safeParse(emailId);
   if (!parseResult.success) {
-    return { success: false, error: 'Invalid email ID.' };
+    logError('Validation failed', parseResult.error, { action: 'deleteEmailAction', uid, category: 'VALIDATION_ERROR' });
+    return { success: false, error: { category: 'VALIDATION_ERROR', message: 'Invalid email ID.', retryable: false } };
   }
   const validEmailId = parseResult.data;
 
@@ -230,8 +193,8 @@ export async function deleteEmailAction(
     revalidatePath('/history');
     return { success: true, data: undefined };
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Unknown error while deleting.';
-    return { success: false, error: message };
+    const message = err instanceof Error ? err.message : 'Unknown error while deleting.';
+    logError('Error deleting email', err, { action: 'deleteEmailAction', uid, category: 'FIRESTORE_READ_WRITE' });
+    return { success: false, error: { category: 'FIRESTORE_READ_WRITE', message, retryable: true } };
   }
 }

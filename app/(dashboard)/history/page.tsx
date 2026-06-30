@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useAuth } from "@/components/providers";
-import { getFirebaseAuth } from "@/lib/firebase/client";
+import { useIdToken, NotAuthenticatedError } from "@/hooks/use-id-token";
 import { getEmailHistoryAction, deleteEmailAction } from "@/actions";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,7 @@ function EmailCard({
 
 export default function HistoryPage() {
   const { user } = useAuth();
+  const getIdToken = useIdToken();
   const [emails, setEmails] = useState<GeneratedEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,36 +68,48 @@ export default function HistoryPage() {
 
   useEffect(() => {
     if (!user) return;
-    const currentUser = getFirebaseAuth().currentUser;
-    if (!currentUser) return;
-    void currentUser.getIdToken().then((idToken) =>
-      getEmailHistoryAction(idToken).then((result) => {
+    
+    getIdToken()
+      .then((idToken) =>
+        getEmailHistoryAction(idToken).then((result) => {
         if (result.success) {
           setEmails(result.data);
         } else {
-          setError(result.error);
+          setError(result.error.message);
         }
         setLoading(false);
-      })
-    );
-  }, [user]);
+      }))
+      .catch((err) => {
+        if (err instanceof NotAuthenticatedError) {
+          setError('You must be signed in to view history.');
+        } else {
+          setError('Failed to verify session. Please try again.');
+        }
+        setLoading(false);
+      });
+  }, [user, getIdToken]);
 
   function handleDelete(emailId: string) {
     if (!user) return;
     setDeletingId(emailId);
     startDeleteTransition(async () => {
-      const currentUser = getFirebaseAuth().currentUser;
-      if (!currentUser) {
-        setError('You must be signed in to delete emails.');
+      let idToken: string;
+      try {
+        idToken = await getIdToken();
+      } catch (err) {
+        if (err instanceof NotAuthenticatedError) {
+          setError('You must be signed in to delete emails.');
+        } else {
+          setError('Failed to verify session. Please try again.');
+        }
         setDeletingId(null);
         return;
       }
-      const idToken = await currentUser.getIdToken();
       const result = await deleteEmailAction(idToken, emailId);
       if (result.success) {
         setEmails((prev) => prev.filter((e) => e.id !== emailId));
       } else {
-        setError(result.error);
+        setError(result.error.message);
       }
       setDeletingId(null);
     });

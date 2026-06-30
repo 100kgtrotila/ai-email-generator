@@ -34,9 +34,23 @@ export interface GeneratedEmail {
 }
 
 /**
+ * Error categories for granular diagnostic handling.
+ */
+export type ErrorCategory =
+  | 'AUTH_TOKEN_INVALID'
+  | 'FIREBASE_ADMIN_INIT'
+  | 'FIREBASE_CLIENT_INIT'
+  | 'FIRESTORE_READ_WRITE'
+  | 'GEMINI_API_KEY_MISSING'
+  | 'GEMINI_RATE_LIMIT'
+  | 'GEMINI_INVALID_RESPONSE'
+  | 'VALIDATION_ERROR'
+  | 'UNKNOWN';
+
+/**
  * Discriminated union returned by all Server Actions.
  * Actions NEVER throw to the client; they always return ActionResult<T>.
  */
 export type ActionResult<T> =
   | { readonly success: true; readonly data: T }
-  | { readonly success: false; readonly error: string };
+  | { readonly success: false; readonly error: { category: ErrorCategory; message: string; retryable: boolean } };

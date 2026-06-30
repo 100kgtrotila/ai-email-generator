@@ -62,7 +62,7 @@ async function runStressTest() {
       // Only print first 50 chars of body to keep output clean
       console.log(`   Body: ${result.body.substring(0, 50).replace(/\n/g, ' ')}...`);
       successCount++;
-    } catch (error) {
+    } catch (_error) {
       console.error(`❌ FAILED for Tone: [${tone.toUpperCase()}]`);
       // The enhanced logging in lib/gemini/service.ts will automatically dump the exact 
       // payload, raw string, and error message to the console here.

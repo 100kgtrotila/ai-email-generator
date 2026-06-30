@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getAIService } from '@/lib/ai/factory';
 import { MockService } from '@/lib/ai/mock-service';
-import { GeminiService } from '@/lib/ai/gemini-service';
 import { GeminiServiceError } from '@/lib/gemini/service';
 
 // Mock the external Google API

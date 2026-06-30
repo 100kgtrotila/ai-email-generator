@@ -4,6 +4,7 @@ import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai'
 import { buildSystemInstruction, buildEmailUserPrompt } from './prompts';
 import { classifyGeminiError } from './errors';
 import type { EmailRequest } from '@/types';
+import { logError } from '@/lib/logger';
 
 const MODEL_ID = 'gemini-2.5-flash' as const;
 
@@ -68,10 +69,14 @@ function parseEmailResponse(raw: string, request: EmailRequest): GeminiEmailResu
   try {
     parsed = JSON.parse(sanitized);
   } catch (e) {
-    console.error('\n❌ [Gemini Parse Error] ❌');
-    console.error('Payload:', { tone: request.tone, length: request.length, purpose: request.purpose });
-    console.error('Raw String:', raw);
-    console.error('Error:', e instanceof Error ? e.message : String(e));
+    logError('Gemini Parse Error', e, {
+      action: 'parseEmailResponse',
+      category: 'GEMINI_INVALID_RESPONSE',
+      tone: request.tone,
+      length: request.length,
+      purpose: request.purpose,
+      rawString: raw,
+    });
     throw new GeminiServiceError({
       userMessage: 'The AI returned a response that could not be parsed. Please try again.',
       retryable: true,
@@ -119,9 +124,13 @@ export async function generateEmail(
     const result = await model.generateContent(userPrompt);
     rawText = result.response.text();
   } catch (err) { 
-    console.error('\n❌ [Gemini API Error] ❌');
-    console.error('Payload:', { tone: request.tone, length: request.length, purpose: request.purpose });
-    console.error('Error Details:', err);
+    logError('Gemini API Error', err, {
+      action: 'generateEmail',
+      category: 'UNKNOWN', // Will be reclassified soon below if 429
+      tone: request.tone,
+      length: request.length,
+      purpose: request.purpose,
+    });
     
     const errorMessage = err instanceof Error ? err.message : String(err);
     if (errorMessage.includes('429') || errorMessage.toLowerCase().includes('quota')) {
