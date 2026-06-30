@@ -1,76 +1,114 @@
 'use client';
 
 import { useState, useTransition } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/components/providers";
 import { getFirebaseAuth } from "@/lib/firebase/client";
 import { generateEmailAction, saveEmailAction } from "@/actions";
 import { LoadingSpinner } from "@/components/shared/loading-spinner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Copy, Save, Sparkles, CheckCircle2 } from "lucide-react";
-import type { EmailTone, GeneratedEmail } from "@/types";
+  AlertTriangle,
+  CheckCircle2,
+  Copy,
+  Download,
+  Mail,
+  Save,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { emailGenerationSchema, type EmailGenerationInput } from "@/lib/validations/email";
+import type { EmailTone, EmailLength, GeneratedEmail } from "@/types";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const TONES: { value: EmailTone; label: string }[] = [
   { value: "professional", label: "Professional" },
+  { value: "casual", label: "Casual" },
   { value: "friendly", label: "Friendly" },
   { value: "formal", label: "Formal" },
-  { value: "casual", label: "Casual" },
   { value: "persuasive", label: "Persuasive" },
 ];
 
+const LENGTHS: { value: EmailLength; label: string }[] = [
+  { value: "short", label: "Short" },
+  { value: "medium", label: "Medium" },
+  { value: "long", label: "Long" },
+];
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [isPending, startTransition] = useTransition();
-  const [isSaving, startSaveTransition] = useTransition();
+
+  // ── react-hook-form ────────────────────────────────────────────────────────
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<EmailGenerationInput>({
+    resolver: zodResolver(emailGenerationSchema),
+    defaultValues: {
+      subject: "",
+      tone: "professional",
+      length: "medium",
+      context: "",
+    },
+    mode: "onTouched",
+  });
+
+  const watchedTone = watch("tone");
+  const watchedLength = watch("length");
+
+  // ── Output state ──────────────────────────────────────────────────────────
   const [generatedEmail, setGeneratedEmail] = useState<GeneratedEmail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Selected tone tracked separately so Select value is controlled
-  const [tone, setTone] = useState<EmailTone>("professional");
+  const [isSaving, startSaveTransition] = useTransition();
 
-  function handleGenerate(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const get = (name: string) =>
-      (form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement).value;
+  // ── Submit handler — only called when Zod validation passes ───────────────
+  async function onValidSubmit(data: EmailGenerationInput) {
+    setServerError(null);
+    setSaveSuccess(false);
+    setGeneratedEmail(null);
 
-    startTransition(async () => {
-      setError(null);
-      setSaveSuccess(false);
+    const currentUser = getFirebaseAuth().currentUser;
+    if (!currentUser) {
+      setServerError("You must be signed in to generate emails.");
+      return;
+    }
+    const idToken = await currentUser.getIdToken();
 
-      const currentUser = getFirebaseAuth().currentUser;
-      if (!currentUser) {
-        setError('You must be signed in to generate emails.');
-        return;
-      }
-      const idToken = await currentUser.getIdToken();
-
-      const result = await generateEmailAction(idToken, {
-        recipientName: get("recipientName"),
-        recipientRole: get("recipientRole"),
-        senderName: get("senderName"),
-        purpose: get("purpose"),
-        tone,
-        additionalContext: get("additionalContext"),
-      });
-
-      if (result.success) {
-        setGeneratedEmail(result.data);
-      } else {
-        setError(result.error);
-      }
+    const result = await generateEmailAction(idToken, {
+      senderName: user?.displayName ?? "Me",
+      recipientName: "",
+      recipientRole: "",
+      purpose: data.subject,
+      tone: data.tone,
+      additionalContext: data.context ?? "",
+      length: data.length,
     });
+
+    if (result.success) {
+      setGeneratedEmail(result.data);
+    } else {
+      setServerError(result.error);
+    }
+  }
+
+  // ── Utility handlers ──────────────────────────────────────────────────────
+  function handleClear() {
+    reset();
+    setGeneratedEmail(null);
+    setServerError(null);
+    setSaveSuccess(false);
   }
 
   function handleCopy() {
@@ -82,12 +120,24 @@ export default function DashboardPage() {
     });
   }
 
+  function handleDownload() {
+    if (!generatedEmail) return;
+    const text = `Subject: ${generatedEmail.subject}\n\n${generatedEmail.body}`;
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${generatedEmail.subject.replace(/[^a-z0-9]/gi, "_").toLowerCase()}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   function handleSave() {
     if (!generatedEmail) return;
     startSaveTransition(async () => {
       const currentUser = getFirebaseAuth().currentUser;
       if (!currentUser) {
-        setError('You must be signed in to save emails.');
+        setServerError("You must be signed in to save emails.");
         return;
       }
       const idToken = await currentUser.getIdToken();
@@ -95,187 +145,303 @@ export default function DashboardPage() {
       if (result.success) {
         setSaveSuccess(true);
       } else {
-        setError(result.error);
+        setServerError(result.error);
       }
     });
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Email Generator
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Fill in the details below and let AI write your email.
-        </p>
-      </div>
+    <div className="min-h-full bg-slate-50 px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-6xl">
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        {/* ── Input Form ──────────────────────────────────────────────────── */}
-        <form
-          id="email-generator-form"
-          onSubmit={handleGenerate}
-          className="space-y-4"
-        >
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="gen-sender-name">Your Name</Label>
-              <Input
-                id="gen-sender-name"
-                name="senderName"
-                placeholder="Jane Smith"
-                required
-                defaultValue={user?.displayName ?? ""}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="gen-recipient-name">Recipient Name</Label>
-              <Input
-                id="gen-recipient-name"
-                name="recipientName"
-                placeholder="John Doe"
-                required
-              />
-            </div>
-          </div>
+        {/* Page Headline */}
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+            Free AI Email Writer
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Generate professional emails in seconds — powered by Gemini AI.
+          </p>
+        </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="gen-recipient-role">Recipient Role / Company</Label>
-            <Input
-              id="gen-recipient-role"
-              name="recipientRole"
-              placeholder="Hiring Manager at Acme Corp"
-              required
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="gen-purpose">Purpose of the Email</Label>
-            <Input
-              id="gen-purpose"
-              name="purpose"
-              placeholder="Follow up on my job application submitted last week"
-              required
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="gen-tone">Tone</Label>
-            <Select
-              value={tone}
-              onValueChange={(v) => setTone(v as EmailTone)}
-            >
-              <SelectTrigger id="gen-tone">
-                <SelectValue placeholder="Select a tone" />
-              </SelectTrigger>
-              <SelectContent>
-                {TONES.map(({ value, label }) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="gen-context">Additional Context (optional)</Label>
-            <Textarea
-              id="gen-context"
-              name="additionalContext"
-              placeholder="Any specific details, deadlines, or talking points to include…"
-              rows={4}
-            />
-          </div>
-
-          {error !== null && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-
-          <Button
-            id="gen-submit"
-            type="submit"
-            className="w-full"
-            disabled={isPending}
+        {/* Server Error Banner */}
+        {serverError !== null && (
+          <div
+            role="alert"
+            id="dashboard-error-banner"
+            className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
           >
-            {isPending ? (
-              <>
-                <LoadingSpinner className="mr-2" />
-                Generating…
-              </>
-            ) : (
-              <>
-                <Sparkles className="mr-2 size-4" />
-                Generate Email
-              </>
-            )}
-          </Button>
-        </form>
-
-        {/* ── Output ──────────────────────────────────────────────────────── */}
-        <div className="flex flex-col">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-medium text-foreground">
-              Generated Email
-            </h2>
-            {generatedEmail !== null && (
-              <div className="flex gap-2">
-                <Button
-                  id="gen-copy"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopy}
-                >
-                  {copied ? (
-                    <CheckCircle2 className="mr-1.5 size-3.5 text-primary" />
-                  ) : (
-                    <Copy className="mr-1.5 size-3.5" />
-                  )}
-                  {copied ? "Copied!" : "Copy"}
-                </Button>
-                <Button
-                  id="gen-save"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSave}
-                  disabled={isSaving || saveSuccess}
-                >
-                  {isSaving ? (
-                    <LoadingSpinner className="mr-1.5" size={12} />
-                  ) : saveSuccess ? (
-                    <CheckCircle2 className="mr-1.5 size-3.5 text-primary" />
-                  ) : (
-                    <Save className="mr-1.5 size-3.5" />
-                  )}
-                  {saveSuccess ? "Saved!" : "Save"}
-                </Button>
-              </div>
-            )}
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <div>
+              <p className="font-semibold">Something went wrong</p>
+              <p className="mt-0.5 font-normal opacity-80">{serverError}</p>
+            </div>
           </div>
+        )}
 
-          <div className="flex min-h-[360px] flex-1 flex-col rounded-xl border border-border bg-muted/30">
-            {generatedEmail === null ? (
-              <div className="flex flex-1 items-center justify-center">
-                <p className="text-sm text-muted-foreground">
-                  {isPending
-                    ? "Writing your email…"
-                    : "Your generated email will appear here."}
-                </p>
+        {/* Main Card */}
+        <div className="overflow-hidden rounded-2xl bg-white shadow-xl shadow-indigo-500/10 ring-1 ring-slate-200/60">
+          <form onSubmit={handleSubmit(onValidSubmit)} id="email-generator-form" noValidate>
+
+            {/* ── Tone Header Bar ─────────────────────────────────────── */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3.5">
+              <span className="mr-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                Tone :
+              </span>
+              {TONES.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  id={`tone-${value}`}
+                  onClick={() => setValue("tone", value, { shouldValidate: true })}
+                  className={cn(
+                    "rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-150 cursor-pointer select-none",
+                    watchedTone === value
+                      ? "bg-indigo-600 text-white shadow-sm shadow-indigo-300"
+                      : "border border-slate-200 bg-white text-slate-500 hover:border-indigo-300 hover:text-indigo-600"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Split Body ──────────────────────────────────────────── */}
+            <div className="grid min-h-[400px] grid-cols-1 divide-y divide-slate-100 lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+
+              {/* Left — Input Column */}
+              <div className="flex flex-col gap-4 p-5 sm:p-6">
+
+                {/* Subject field */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="dashboard-subject"
+                      className="text-[11px] font-bold uppercase tracking-widest text-slate-400"
+                    >
+                      Subject / Topic
+                    </label>
+                    {/* Length pill selector */}
+                    <div className="flex items-center gap-1" id="length-selector">
+                      {LENGTHS.map(({ value, label }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          id={`length-${value}`}
+                          onClick={() => setValue("length", value, { shouldValidate: true })}
+                          className={cn(
+                            "rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-all duration-150 cursor-pointer select-none",
+                            watchedLength === value
+                              ? "bg-indigo-600 text-white"
+                              : "border border-slate-200 bg-white text-slate-400 hover:border-indigo-300 hover:text-indigo-500"
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <input
+                    {...register("subject")}
+                    id="dashboard-subject"
+                    type="text"
+                    placeholder="e.g., Partnership proposal..."
+                    autoComplete="off"
+                    className={cn(
+                      "w-full rounded-lg border bg-slate-50/60 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:bg-white focus:ring-2",
+                      errors.subject
+                        ? "border-red-300 focus:border-red-400 focus:ring-red-500/15"
+                        : "border-slate-200 focus:border-indigo-400 focus:ring-indigo-500/15"
+                    )}
+                  />
+
+                  {/* Subject validation error */}
+                  {errors.subject && (
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-red-500" role="alert" id="subject-error">
+                      <AlertTriangle className="size-3 shrink-0" />
+                      {errors.subject.message}
+                    </p>
+                  )}
+                </div>
+
+                {/* Context textarea */}
+                <div className="flex flex-1 flex-col gap-1.5">
+                  <label
+                    htmlFor="dashboard-context"
+                    className="text-[11px] font-bold uppercase tracking-widest text-slate-400"
+                  >
+                    Context
+                    <span className="ml-1.5 font-normal normal-case text-slate-400/70">
+                      — optional
+                    </span>
+                  </label>
+
+                  <Textarea
+                    {...register("context")}
+                    id="dashboard-context"
+                    placeholder="Enter your email context or paste text here..."
+                    rows={9}
+                    className={cn(
+                      "flex-1 resize-none text-sm text-slate-800 placeholder:text-slate-400 transition focus:bg-white",
+                      errors.context
+                        ? "border-red-300 focus:border-red-400 focus:ring-red-500/15"
+                        : "border-slate-200 bg-slate-50/60 focus:border-indigo-400 focus:ring-indigo-500/15"
+                    )}
+                  />
+
+                  {/* Context validation error */}
+                  {errors.context && (
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-red-500" role="alert" id="context-error">
+                      <AlertTriangle className="size-3 shrink-0" />
+                      {errors.context.message}
+                    </p>
+                  )}
+                </div>
               </div>
-            ) : (
-              <div className="p-5 text-sm leading-relaxed text-foreground">
-                <p className="mb-3 font-medium">
-                  <span className="text-muted-foreground">Subject: </span>
-                  {generatedEmail.subject}
-                </p>
-                <hr className="mb-3 border-border" />
-                <p className="whitespace-pre-wrap">{generatedEmail.body}</p>
+
+              {/* Right — Output Column */}
+              <div className="flex flex-col" id="output-column">
+                {isSubmitting ? (
+                  /* Loading state */
+                  <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+                    <div className="relative">
+                      <div className="size-12 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600" />
+                      <Sparkles className="absolute left-1/2 top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 text-indigo-500" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-slate-700">Writing your email…</p>
+                      <p className="text-xs text-slate-400">Gemini AI is composing your draft</p>
+                    </div>
+                  </div>
+                ) : generatedEmail !== null ? (
+                  /* Result state */
+                  <div className="flex-1 overflow-y-auto p-5 sm:p-6" id="dashboard-result">
+                    <div className="mb-3 border-b border-slate-100 pb-3">
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Subject</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-800">{generatedEmail.subject}</p>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                      {generatedEmail.body}
+                    </p>
+                  </div>
+                ) : (
+                  /* Empty state */
+                  <div
+                    className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center"
+                    id="dashboard-empty-state"
+                  >
+                    <div className="flex size-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-400">
+                      <Mail className="size-5" />
+                    </div>
+                    <div className="max-w-[220px] space-y-1">
+                      <p className="text-sm font-semibold text-slate-600">Your email will appear here</p>
+                      <p className="text-xs leading-relaxed text-slate-400">
+                        Add a subject and context on the left, then click &ldquo;Draft Email&rdquo;.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+
+            {/* ── Footer Bar ──────────────────────────────────────────── */}
+            <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/50 px-5 py-3">
+
+              {/* Left — secondary actions */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+                  id="btn-dashboard-clear"
+                >
+                  <Trash2 className="size-3.5" />
+                  Clear
+                </button>
+
+                {generatedEmail !== null && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleCopy}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+                      id="btn-dashboard-copy"
+                    >
+                      {copied ? (
+                        <>
+                          <CheckCircle2 className="size-3.5 text-emerald-500" />
+                          <span className="text-emerald-600">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3.5" />
+                          Copy
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDownload}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+                      id="btn-dashboard-download"
+                    >
+                      <Download className="size-3.5" />
+                      Download
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={isSaving || saveSuccess}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-40 cursor-pointer"
+                      id="btn-dashboard-save"
+                    >
+                      {isSaving ? (
+                        <LoadingSpinner size={12} />
+                      ) : saveSuccess ? (
+                        <CheckCircle2 className="size-3.5 text-emerald-500" />
+                      ) : (
+                        <Save className="size-3.5" />
+                      )}
+                      {saveSuccess ? "Saved!" : "Save"}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Right — primary CTA */}
+              <button
+                type="submit"
+                id="btn-dashboard-generate"
+                disabled={isSubmitting}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 cursor-pointer select-none",
+                  isSubmitting
+                    ? "bg-indigo-400 cursor-not-allowed shadow-none"
+                    : "bg-indigo-600 shadow-indigo-300/50 hover:bg-indigo-700 hover:shadow-md hover:shadow-indigo-300/50"
+                )}
+              >
+                {isSubmitting ? (
+                  <>
+                    <LoadingSpinner size={14} className="text-white/80" />
+                    Generating…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="size-3.5" />
+                    Draft Email
+                  </>
+                )}
+              </button>
+            </div>
+
+          </form>
         </div>
       </div>
     </div>

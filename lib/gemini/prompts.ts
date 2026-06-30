@@ -61,6 +61,12 @@ Rules you MUST follow:
 // User-turn prompt (dynamic, per-request)
 // ──────────────────────────────────────────────────────────────────────────────
 
+const LENGTH_INSTRUCTIONS: Readonly<Record<NonNullable<EmailRequest['length']>, string>> = {
+  short: 'Short — 1 to 2 concise paragraphs.',
+  medium: 'Medium — 2 to 3 focused paragraphs.',
+  long: 'Long — 3 to 5 detailed, well-structured paragraphs.',
+};
+
 /**
  * Builds the user-turn prompt from a typed EmailRequest.
  * This is intentionally concise — the system instruction handles the
@@ -68,13 +74,20 @@ Rules you MUST follow:
  */
 export function buildEmailUserPrompt(request: EmailRequest): string {
   const toneDescription = TONE_INSTRUCTIONS[request.tone];
+  const lengthDescription = LENGTH_INSTRUCTIONS[request.length ?? 'medium'];
+
+  const recipientLine =
+    request.recipientName && request.recipientRole
+      ? `${request.recipientName} (${request.recipientRole})`
+      : request.recipientName || request.recipientRole || 'the recipient';
 
   const lines: string[] = [
     `Write an email with the following specifications:`,
     ``,
     `Tone:           ${toneDescription}`,
+    `Length:         ${lengthDescription}`,
     `From:           ${request.senderName}`,
-    `To:             ${request.recipientName} (${request.recipientRole})`,
+    `To:             ${recipientLine}`,
     `Purpose:        ${request.purpose}`,
   ];
 

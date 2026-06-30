@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Draft reference files — not part of the build
+    "components to copy/**",
   ]),
 ]);
 

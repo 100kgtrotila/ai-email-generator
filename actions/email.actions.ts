@@ -36,7 +36,7 @@ import {
   toGeneratedEmail,
   type EmailDocument,
 } from '@/lib/firebase/email-repository';
-import { emailRequestSchema, generatedEmailSchema } from '@/lib/validations/email';
+import { emailGenerationSchema, generatedEmailSchema } from '@/lib/validations/email';
 import { z } from 'zod';
 import type { ActionResult, EmailRequest, GeneratedEmail } from '@/types';
 
@@ -83,14 +83,30 @@ export async function generateEmailAction(
   // uid is verified — log it server-side for audit trail
   console.info(`[generateEmailAction] uid=${uid}`);
 
-  const parseResult = emailRequestSchema.safeParse(request);
+  // Validate with the same schema the frontend uses — server-side guard against
+  // crafted requests that bypassed client-side validation.
+  const parseResult = emailGenerationSchema.safeParse({
+    subject: request.purpose,
+    tone: request.tone,
+    length: request.length ?? 'medium',
+    context: request.additionalContext,
+  });
   if (!parseResult.success) {
-    return { success: false, error: 'Invalid email request data.' };
+    const fieldErrors = parseResult.error.flatten().fieldErrors;
+    // Build a human-readable message listing every failing field.
+    const messages = Object.entries(fieldErrors)
+      .flatMap(([field, errs]) =>
+        (errs ?? []).map((msg) => `${field}: ${msg}`),
+      )
+      .join(' | ');
+    return {
+      success: false,
+      error: messages || 'Invalid email request data.',
+    };
   }
-  const validRequest = parseResult.data;
 
   try {
-    const result = await generateEmail(validRequest);
+    const result = await generateEmail(request);
     const email: GeneratedEmail = {
       id: randomUUID(),
       subject: result.subject,

@@ -11,6 +11,9 @@ export type EmailTone =
   | 'casual'
   | 'persuasive';
 
+/** Controls the target verbosity / paragraph count of the generated email. */
+export type EmailLength = 'short' | 'medium' | 'long';
+
 export interface EmailRequest {
   readonly recipientName: string;
   readonly recipientRole: string;
@@ -18,6 +21,8 @@ export interface EmailRequest {
   readonly purpose: string;
   readonly tone: EmailTone;
   readonly additionalContext: string;
+  /** Optional length hint — defaults to 'medium' when omitted. */
+  readonly length?: EmailLength;
 }
 
 export interface GeneratedEmail {
