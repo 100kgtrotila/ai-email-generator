@@ -1,5 +1,7 @@
 # AI Email Generator
 
+**🌐 Live Demo: [ai-email-generator-zeta.vercel.app](https://ai-email-generator-zeta.vercel.app)**
+
 A fullstack Next.js application that leverages Google's Gemini AI to instantly draft professional, persuasive, and custom-toned emails.
 
 ## 🚀 Features
@@ -68,3 +70,14 @@ Run the manual live API stress test to gauge current Google API rate limits acro
 ```bash
 npm run stress-test
 ```
+
+## 🚀 CI/CD Pipeline
+Every push to `main` automatically triggers the GitHub Actions workflow (`.github/workflows/ci.yml`):
+1. **CI job** — runs ESLint, Vitest tests, and a full Next.js production build (using `AI_PROVIDER=mock` with placeholder Firebase credentials, so no secrets are needed).
+2. **Deploy job** — after CI passes, deploys to Vercel Production using the Vercel CLI.
+
+### Required GitHub Secrets (for auto-deploy)
+Set these in **GitHub → Settings → Secrets → Actions**:
+| Secret | Where to get it |
+|--------|-----------------|
+| `VERCEL_TOKEN` | [vercel.com/account/tokens](https://vercel.com/account/tokens) |
