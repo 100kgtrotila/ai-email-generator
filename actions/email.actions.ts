@@ -37,7 +37,7 @@ import {
   toGeneratedEmail,
   type EmailDocument,
 } from '@/lib/firebase/email-repository';
-import { emailGenerationSchema, generatedEmailSchema } from '@/lib/validations/email';
+import { generatedEmailSchema, emailRequestSchema } from '@/lib/validations/email';
 import { z } from 'zod';
 import type { ActionResult, EmailRequest, GeneratedEmail } from '@/types';
 
@@ -84,14 +84,9 @@ export async function generateEmailAction(
   // uid is verified — log it server-side for audit trail
   console.info(`[generateEmailAction] uid=${uid}`);
 
-  // Validate with the same schema the frontend uses — server-side guard against
-  // crafted requests that bypassed client-side validation.
-  const parseResult = emailGenerationSchema.safeParse({
-    subject: request.purpose,
-    tone: request.tone,
-    length: request.length ?? 'medium',
-    context: request.additionalContext,
-  });
+  // Validate the full request schema to ensure no prompt injection or data bloat occurs
+  // in unvalidated fields like senderName.
+  const parseResult = emailRequestSchema.safeParse(request);
   if (!parseResult.success) {
     const fieldErrors = parseResult.error.flatten().fieldErrors;
     // Build a human-readable message listing every failing field.
@@ -107,7 +102,7 @@ export async function generateEmailAction(
   }
 
   try {
-    const result = await getAIService().generateEmail(request);
+    const result = await getAIService().generateEmail(parseResult.data);
     const email: GeneratedEmail = {
       id: randomUUID(),
       subject: result.subject,
@@ -224,7 +219,7 @@ export async function deleteEmailAction(
     return { success: false, error: 'Unauthorized.' };
   }
 
-  const parseResult = z.string().min(1).safeParse(emailId);
+  const parseResult = z.string().uuid('Invalid email ID format.').safeParse(emailId);
   if (!parseResult.success) {
     return { success: false, error: 'Invalid email ID.' };
   }

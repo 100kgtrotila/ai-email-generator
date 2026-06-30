@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/components/providers";
@@ -70,6 +70,7 @@ export default function DashboardPage() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [isSaving, startSaveTransition] = useTransition();
 
@@ -105,6 +106,7 @@ export default function DashboardPage() {
 
   // ── Utility handlers ──────────────────────────────────────────────────────
   function handleClear() {
+    if (isSubmitting || isSaving) return;
     reset();
     setGeneratedEmail(null);
     setServerError(null);
@@ -116,7 +118,8 @@ export default function DashboardPage() {
     const text = `Subject: ${generatedEmail.subject}\n\n${generatedEmail.body}`;
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
     });
   }
 

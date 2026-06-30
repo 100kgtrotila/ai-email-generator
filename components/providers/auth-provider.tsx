@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
         setUser(toAuthUser(firebaseUser));
         const token = await firebaseUser.getIdToken();
         Cookies.set('firebase-token', token, {
-          expires: 1, // 1 day
+          expires: 1 / 24, // 1 hour
           secure: process.env.NODE_ENV === 'production',
           sameSite: 'lax',
         });
