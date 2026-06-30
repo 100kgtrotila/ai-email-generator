@@ -63,6 +63,18 @@ function Sidebar() {
         })}
       </nav>
 
+      {/* Upgrade CTA */}
+      <div className="border-t border-slate-100 p-3">
+        <Link
+          href="/pricing"
+          id="sidebar-upgrade-cta"
+          className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-md hover:from-indigo-500 hover:to-indigo-400"
+        >
+          <Sparkles className="size-4 shrink-0" />
+          Upgrade to Pro
+        </Link>
+      </div>
+
       {/* Sign out */}
       <div className="border-t border-slate-100 p-3">
         <button

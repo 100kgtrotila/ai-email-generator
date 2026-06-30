@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Check, Sparkles } from 'lucide-react';
 
+import { UpgradeButton } from '@/components/pricing/upgrade-button';
+
 export default function PricingPage() {
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -66,9 +68,7 @@ export default function PricingPage() {
                 </li>
               ))}
             </ul>
-            <Button className="relative z-10 w-full bg-indigo-500 text-white hover:bg-indigo-400 shadow-lg" asChild>
-              <Link href="/login">Upgrade to Pro</Link>
-            </Button>
+            <UpgradeButton />
           </div>
         </div>
       </div>

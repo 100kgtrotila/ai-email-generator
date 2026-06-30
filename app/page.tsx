@@ -85,6 +85,12 @@ export default function LandingPage() {
             >
               Features
             </a>
+            <Link
+              href="/pricing"
+              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Pricing
+            </Link>
             <a
               href="#faq"
               className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
