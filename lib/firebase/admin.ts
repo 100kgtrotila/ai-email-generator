@@ -46,13 +46,13 @@ function getAdminApp(): App {
 }
 
 export const adminApp = new Proxy({} as App, {
-  get: (target, prop) => (getAdminApp() as any)[prop],
+  get: (_target, prop) => (getAdminApp() as any)[prop],
 });
 
 export const adminDb = new Proxy({} as Firestore, {
-  get: (target, prop) => (getFirestore(getAdminApp()) as any)[prop],
+  get: (_target, prop) => (getFirestore(getAdminApp()) as any)[prop],
 });
 
 export const adminAuth = new Proxy({} as Auth, {
-  get: (target, prop) => (getAuth(getAdminApp()) as any)[prop],
+  get: (_target, prop) => (getAuth(getAdminApp()) as any)[prop],
 });
