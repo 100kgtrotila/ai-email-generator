@@ -7,8 +7,7 @@ This document outlines the AI tooling, models, and agentic processes utilized du
 - **Agentic Assistance**: Advanced conversational AI integrated as a pair-programmer to assist with boilerplate, structural refactors, testing, and debugging.
 
 ## 🤖 Models Applied
-- **Application Engine (Live AI)**: **Google Gemini 2.5 Flash** was utilized as the primary LLM for the application itself. It was chosen for its high-speed inference, low latency, and robust structured JSON output capabilities, which perfectly fit the need for safely generating email subjects and bodies.
-- **Code Generation (Agent)**: Advanced models (such as GPT-4o or Claude 3.5 Sonnet) were leveraged through the IDE agent to accelerate full-stack scaffolding, specifically regarding Tailwind UI styling, Zod schemas, and Firebase integration.
+- Gemini 3.1 Pro, Claude Sonnet 4.6, ChatGPT 5.5
 
 ## 🔄 Development Process
 1. **Foundation & Auth**: We began by establishing the Next.js App Router structure and implementing Firebase Auth. We ensured the Edge middleware protected routes based on client-side cookies, while the Server Actions independently verified JWTs via the Admin SDK.
