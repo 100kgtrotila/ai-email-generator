@@ -10,6 +10,12 @@
     "test": "vitest run",
     "stress-test": "tsx --conditions react-server scripts/stress-test-ai.ts"
   },
+  "engines": {
+    "node": "22.x"
+  },
+  "overrides": {
+    "jose": "^5.9.6"
+  },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^5.4.0",
