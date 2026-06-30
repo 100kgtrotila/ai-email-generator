@@ -55,12 +55,23 @@ function getModel(): GenerativeModel {
   return _model;
 }
 
-function parseEmailResponse(raw: string): GeminiEmailResult {
-  let parsed: unknown;
+function parseEmailResponse(raw: string, request: EmailRequest): GeminiEmailResult {
+  let sanitized = raw;
+  // Robust extraction: Gemini occasionally wraps the response in markdown blocks 
+  // (e.g., ```json ... ```) even when responseMimeType is set to application/json.
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    sanitized = jsonMatch[0];
+  }
 
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
-  } catch {
+    parsed = JSON.parse(sanitized);
+  } catch (e) {
+    console.error('\n❌ [Gemini Parse Error] ❌');
+    console.error('Payload:', { tone: request.tone, length: request.length, purpose: request.purpose });
+    console.error('Raw String:', raw);
+    console.error('Error:', e instanceof Error ? e.message : String(e));
     throw new GeminiServiceError({
       userMessage: 'The AI returned a response that could not be parsed. Please try again.',
       retryable: true,
@@ -96,7 +107,6 @@ function parseEmailResponse(raw: string): GeminiEmailResult {
   return { subject: typed.subject.trim(), body: typed.body.trim() };
 }
 
-
 export async function generateEmail(
   request: EmailRequest,
 ): Promise<GeminiEmailResult> {
@@ -109,8 +119,20 @@ export async function generateEmail(
     const result = await model.generateContent(userPrompt);
     rawText = result.response.text();
   } catch (err) { 
+    console.error('\n❌ [Gemini API Error] ❌');
+    console.error('Payload:', { tone: request.tone, length: request.length, purpose: request.purpose });
+    console.error('Error Details:', err);
+    
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (errorMessage.includes('429') || errorMessage.toLowerCase().includes('quota')) {
+      throw new GeminiServiceError({
+        userMessage: 'AI Service quota exceeded. Please wait a minute before trying again.',
+        retryable: true,
+        status: 429,
+      });
+    }
     const classified = classifyGeminiError(err);
     throw new GeminiServiceError(classified);
   }
-  return parseEmailResponse(rawText);
+  return parseEmailResponse(rawText, request);
 }

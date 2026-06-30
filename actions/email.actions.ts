@@ -28,7 +28,8 @@
 import { randomUUID } from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { adminAuth } from '@/lib/firebase/admin';
-import { generateEmail, GeminiServiceError } from '@/lib/gemini/service';
+import { GeminiServiceError } from '@/lib/gemini/service';
+import { getAIService } from '@/lib/ai/factory';
 import {
   saveEmail,
   getEmails,
@@ -106,7 +107,7 @@ export async function generateEmailAction(
   }
 
   try {
-    const result = await generateEmail(request);
+    const result = await getAIService().generateEmail(request);
     const email: GeneratedEmail = {
       id: randomUUID(),
       subject: result.subject,

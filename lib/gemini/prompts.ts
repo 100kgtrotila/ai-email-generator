@@ -46,9 +46,7 @@ export function buildSystemInstruction(): string {
   return `You are an expert professional email writer with decades of experience \
 crafting clear, effective, and contextually appropriate business communication.
 
-Your output MUST be a single, valid JSON object with exactly two string fields:
-  "subject" — a concise, compelling email subject line (max 80 characters)
-  "body"    — the full email body including greeting, paragraphs, and a closing signature
+You MUST return a valid JSON object with exactly two keys: 'subject' (the email subject) and 'body' (the email body). Do not include any markdown fences, conversational text, or explanations.
 
 Rules you MUST follow:
 - Never include markdown formatting, code fences, or any text outside the JSON object.
